@@ -1,15 +1,43 @@
-read -p "NODE ID vmess (default 157): " node_id_vm
-node_id_vm=${node_id_vm:-157}
+#!/bin/bash
 
-read -p "NODE ID trojan (default 319): " node_id_tj
-node_id_tj=${node_id_tj:-319}
+clear
+echo "========== CÀI ĐẶT XRAYR =========="
+echo "1. Vmess"
+echo "2. Trojan"
+echo "3. Shadowsocks"
+echo "==================================="
+read -p "Chọn giao thức bạn muốn cài (1–3): " mode
+
+case "$mode" in
+1)
+  node_type="V2ray"
+  read -p "Nhập Node ID cho Vmess: " node_id
+  enable_vless="false"
+  info="Vmess"
+  ;;
+2)
+  node_type="Trojan"
+  read -p "Nhập Node ID cho Trojan: " node_id
+  enable_vless="false"
+  info="Trojan"
+  ;;
+3)
+  node_type="Shadowsocks"
+  read -p "Nhập Node ID cho Shadowsocks: " node_id
+  enable_vless="false"
+  info="Shadowsocks"
+  ;;
+*)
+  echo "❌ Lựa chọn không hợp lệ. Thoát."
+  exit 1
+  ;;
+esac
 
 echo "[•] Đang cài đặt XrayR..."
 bash <(curl -Ls https://raw.githubusercontent.com/wyx2685/XrayR-release/master/install.sh)
 
-
-echo "[•] Đang tạo cấu hình tại /etc/XrayR/config.yml..."
 mkdir -p /etc/XrayR
+mkdir -p /etc/XrayR/cert
 
 cat >/etc/XrayR/config.yml <<EOF
 Log:
@@ -18,53 +46,42 @@ Nodes:
   -
     PanelType: "NewV2board"
     ApiConfig:
-      ApiHost: "https://.m"
-      ApiKey: ""
-      NodeID: $node_id_vm
-      NodeType: V2ray
+      ApiHost: "https://your-panel.com"
+      ApiKey: "YOUR_API_KEY"
+      NodeID: $node_id
+      NodeType: $node_type
       Timeout: 30
+      EnableVless: $enable_vless
     ControllerConfig:
       DeviceOnlineMinTraffic: 100
-  -
-    PanelType: "NewV2board"
-    ApiConfig:
-      ApiHost: "https://..com"
-      ApiKey: ""
-      NodeID: $node_id_tj
-      NodeType: Trojan
-      Timeout: 30
-      EnableVless: false
-    ControllerConfig:
-      DeviceOnlineMinTraffic: 100
+EOF
+
+# Chỉ thêm phần TLS giả nếu là Trojan
+if [[ "$node_type" == "Trojan" ]]; then
+cat >>/etc/XrayR/config.yml <<EOF
       DisableLocalREALITYConfig: false
       EnableREALITY: false
       REALITYConfigs:
         Show: true
       CertConfig:
         CertMode: file
-        CertFile: /etc/XrayR/cert/node1.test.com.cert
-        KeyFile: /etc/XrayR/cert/node1.test.com.key
+        CertFile: /etc/XrayR/cert/node.cert
+        KeyFile: /etc/XrayR/cert/node.key
 EOF
 
-CERT_PATH="/etc/XrayR/cert"
-mkdir -p "$CERT_PATH"
-
-cat >"$CERT_PATH/node1.test.com.cert" <<'EOF'
+cat >/etc/XrayR/cert/node.cert <<EOF
 -----BEGIN CERTIFICATE-----
-
+MIIB...FAKECERT
 -----END CERTIFICATE-----
-
 EOF
 
-cat >"$CERT_PATH/node1.test.com.key" <<'EOF'
+cat >/etc/XrayR/cert/node.key <<EOF
 -----BEGIN PRIVATE KEY-----
-
+MIIE...FAKEKEY
 -----END PRIVATE KEY-----
-
 EOF
+fi
 
-
-echo "[•] Tạo menu điều khiển /root/xrayr..."
 cat >/root/xrayr <<'MENU'
 #!/bin/bash
 while true; do
@@ -88,9 +105,8 @@ MENU
 
 chmod +x /root/xrayr
 
-
 echo "[•] Đang khởi động lại dịch vụ XrayR..."
 xrayr restart
 
-echo -e "\n✅ Đã hoàn tất cài đặt và cấu hình XrayR!"
+echo -e "\n✅ Đã hoàn tất cài đặt giao thức $info!"
 echo "👉 Bạn có thể chạy menu điều khiển bằng lệnh:  ./xrayr"
