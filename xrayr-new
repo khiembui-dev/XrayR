@@ -3,7 +3,7 @@
 clear
 echo "========== CÀI ĐẶT XRAYR =========="
 echo "1. Vmess"
-echo "2. Trojan"
+echo "2. Trojan (sử dụng SSL thật)"
 echo "3. Shadowsocks"
 echo "==================================="
 read -p "Chọn giao thức bạn muốn cài (1–3): " mode
@@ -56,7 +56,7 @@ Nodes:
       DeviceOnlineMinTraffic: 100
 EOF
 
-# Chỉ thêm phần TLS giả nếu là Trojan
+# Nếu là Trojan thì thêm SSL thật
 if [[ "$node_type" == "Trojan" ]]; then
 cat >>/etc/XrayR/config.yml <<EOF
       DisableLocalREALITYConfig: false
@@ -69,19 +69,67 @@ cat >>/etc/XrayR/config.yml <<EOF
         KeyFile: /etc/XrayR/cert/node.key
 EOF
 
-cat >/etc/XrayR/cert/node.cert <<EOF
------BEGIN CERTIFICATE-----
-MIIB...FAKECERT
------END CERTIFICATE-----
+# Thêm nội dung chứng chỉ thật
+cat >/etc/XrayR/cert/node.key <<'EOF'
+-----BEGIN PRIVATE KEY-----
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDNjn+K8C2HUYkT
+LIXQ77ubtuh6yhkgIze2yjnRTFbMBzyTBXRWgqW1vB1vLtD3DajcjwiMgaw57kzR
+ovl85tXDkaJCEUF/CP38ujYdI6XCg4yjAC6mgxpS2ROT9oFD8HLnjp3rM5nxqPSm
+NDdM6cMESJxu2kXjHLF3bdaBYy4Fkbj60jxzTcA6p3yR/MJLr/Ew7CbBoV6H9khm
+BKk6sxR30YFNmR4qYY16ITwnwJ4R0wabMT5URQiy2XB0mocdDdp26ZPNij34vsmW
+nOLixl+q+lwvLtsebLSC3EMKYEVG/rr39uL6DEgMGkZPubYwsPCNoJjBP3Arhn5n
+UNPs/bx7AgMBAAECggEAXLYz0n+nmUvuLma7aFRoYsAptRAoKvWXcGtfjoYG8/kj
+mhAwu8Ara3+QKxCLkZJooiolKfJmsq5HmZoPOwWGTrIF5BSSXPC6Vd3LAHOOlN/u
+c6pmYBXrrohYKzlYbkMqIEST93yLp5KT3c7ZTmh03B6/58OtF9VeOcahpDQOktWq
+/FEJBaC9JuZ+JCTL4yW41HFsewDMzS+SXgZgz4Y9uOYbEDKrnRKRM3TyEcJ9VzdJ
+dL3Wc57Ifk4ZtSG9Wm8/50TYzZ6HIVxeh3J1ESc4cgPGq1leDYnzxsVDb407ZIL3
+19NDhrsWNhA33vVKB4twplKfHkuJC2JMY0axpAriiQKBgQDsACyyn23IXeagOR/7
+AW7WTh/HF1vi9+Gbimf5D5tesERb0K58mx3vDA/urqneY/ILpSEWX42a8orqkAOp
+u5mqT1P/gzFqPxcYq6qefWptIK+XXF4x1/ao9fT6JiDgnti0K/Ptn7jzTwfowQf7
+l9Vt8YuWlIVJAJ2Bl6dVTSiC3wKBgQDe+d3zbgcbieQyIBM6SV2bfr1djpBHFo0m
+DvRetQe/Ejdc8rZW+fP7W8QxPeocZNsB30QIG1URnB4O1UGP1yWUxzX3EdeRsFK9
+Ycvnm/HZblMuWjTlY7vqncqXGUwFWUFvNiEnsES4k8G6DTLreq4BZ1GuYAKEtkHF
+EPinVOe15QKBgHZcvA42IZRda/6tx9lW5aT797odgAs8cV1WNEFYz37U/uPhrLF4
+BrJOpWr7FN0h2VJ31jlnYRj2Ti/IXN3y5eXh9Wnv/Yeg7s+DwYXNtuPWgdpzDBcJ
+jn89JEmVd+XQJTVv2d4yvkrhN0FIFt3bT8LdYzn5cUOk2FoXmmgQ06GXAoGAPjs4
+kf9MZog2szK2ixb81DAsQ9dNNzn5DP0xgNk/nzlDUGLBN0ctrCKxgBjKpUAUy9H3
+V9fhBzguP2+Pi8i9SWfMDPfi1VuDzC1mTm78sfWTq6UrjDYotVNyvncl+3wswhA2
+crBEjctXT0jtxEEKHYQrjOJo8Yc4lfqlm3Yb8W0CgYAr5uRBPX87YJ4oHBB2O7J4
+Dpjl5WDKX0ySVMKVV/O7m+FpyHbUe4IiFc4sCGvE2XvBm9yZ7/pYwDP9ks31KQ2T
+wLA5JyHWcoCH1tJRxMYMwmJ++a15rHz4gVYMQ+YV7yyetJOzYFKFHAJkbabl4rc3
+Sia359Yx7D4KKrSdLRgKpA==
+-----END PRIVATE KEY-----
 EOF
 
-cat >/etc/XrayR/cert/node.key <<EOF
------BEGIN PRIVATE KEY-----
-MIIE...FAKEKEY
------END PRIVATE KEY-----
+cat >/etc/XrayR/cert/node.cert <<'EOF'
+-----BEGIN CERTIFICATE-----
+MIIEFTCCAv2gAwIBAgIUSNuetGroFKf7MEy6QP+f497gxc8wDQYJKoZIhvcNAQEL
+BQAwgagxCzAJBgNVBAYTAlVTMRMwEQYDVQQIEwpDYWxpZm9ybmlhMRYwFAYDVQQH
+Ew1TYW4gRnJhbmNpc2NvMRkwFwYDVQQKExBDbG91ZGZsYXJlLCBJbmMuMRswGQYD
+VQQLExJ3d3cuY2xvdWRmbGFyZS5jb20xNDAyBgNVBAMTK01hbmFnZWQgQ0EgM2Yz
+MGI1MWZkODI0NmI1MDM3ODM3OWJjNTJlNzAzNTUwHhcNMjUwNzAzMDcxMzAwWhcN
+MzUwNzAxMDcxMzAwWjAiMQswCQYDVQQGEwJVUzETMBEGA1UEAxMKQ2xvdWRmbGFy
+ZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAM2Of4rwLYdRiRMshdDv
+u5u26HrKGSAjN7bKOdFMVswHPJMFdFaCpbW8HW8u0PcNqNyPCIyBrDnuTNGi+Xzm
+1cORokIRQX8I/fy6Nh0jpcKDjKMALqaDGlLZE5P2gUPwcueOneszmfGo9KY0N0zp
+wwRInG7aReMcsXdt1oFjLgWRuPrSPHNNwDqnfJH8wkuv8TDsJsGhXof2SGYEqTqz
+FHfRgU2ZHiphjXohPCfAnhHTBpsxPlRFCLLZcHSahx0N2nbpk82KPfi+yZac4uLG
+X6r6XC8u2x5stILcQwpgRUb+uvf24voMSAwaRk+5tjCw8I2gmME/cCuGfmdQ0+z9
+vHsCAwEAAaOBuzCBuDATBgNVHSUEDDAKBggrBgEFBQcDAjAMBgNVHRMBAf8EAjAA
+MB0GA1UdDgQWBBRF9BjjXa3gBzHQ4rhjCT7x1Y+d7TAfBgNVHSMEGDAWgBQPJore
+iAYMGbaQrtqq2Vzy6G5l4zBTBgNVHR8ETDBKMEigRqBEhkJodHRwOi8vY3JsLmNs
+b3VkZmxhcmUuY29tL2ZiOGRiY2VmLWZlMjMtNDBkOS1hYjU2LWM1MTZjMmU4ODFl
+Zi5jcmwwDQYJKoZIhvcNAQELBQADggEBAIgoCER1EziW71qwGlbfISo//zVO08rf
+FWvu7vSP2sQ0vfw+BQCTbQjUP017CyuIfKcB+9A2cYpZl3zwGYOQVIObGnSC+UNy
+aqUGL9X00ltuw9dsPRyYNMo6RKzU34UY6ltsbb1h9+/EPz45RA92b0r2TWzjeBKY
+OOZ9NQY9fqouwp78rkhqYfH8oUts+oJwlKrjquOTm7f4VdOO040KMHErjmPF22MI
+mi0aJb+k6iO+oz1PV8lnHWlUDId//1H6/46OlZlkDQBgn18w+mOrEXy78cAZKE+7
+Xu0CCRy7h+rl2zbmMxcIZ8N6SDtlFKl0DNZ3V2/fVPE6D4Sb/GiITL4=
+-----END CERTIFICATE-----
 EOF
 fi
 
+# Menu điều khiển
 cat >/root/xrayr <<'MENU'
 #!/bin/bash
 while true; do
