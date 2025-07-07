@@ -1,0 +1,96 @@
+read -p "NODE ID vmess (default 157): " node_id_vm
+node_id_vm=${node_id_vm:-157}
+
+read -p "NODE ID trojan (default 319): " node_id_tj
+node_id_tj=${node_id_tj:-319}
+
+echo "[•] Đang cài đặt XrayR..."
+bash <(curl -Ls https://raw.githubusercontent.com/wyx2685/XrayR-release/master/install.sh)
+
+
+echo "[•] Đang tạo cấu hình tại /etc/XrayR/config.yml..."
+mkdir -p /etc/XrayR
+
+cat >/etc/XrayR/config.yml <<EOF
+Log:
+  Level: none
+Nodes:
+  -
+    PanelType: "NewV2board"
+    ApiConfig:
+      ApiHost: "https://.m"
+      ApiKey: ""
+      NodeID: $node_id_vm
+      NodeType: V2ray
+      Timeout: 30
+    ControllerConfig:
+      DeviceOnlineMinTraffic: 100
+  -
+    PanelType: "NewV2board"
+    ApiConfig:
+      ApiHost: "https://..com"
+      ApiKey: ""
+      NodeID: $node_id_tj
+      NodeType: Trojan
+      Timeout: 30
+      EnableVless: false
+    ControllerConfig:
+      DeviceOnlineMinTraffic: 100
+      DisableLocalREALITYConfig: false
+      EnableREALITY: false
+      REALITYConfigs:
+        Show: true
+      CertConfig:
+        CertMode: file
+        CertFile: /etc/XrayR/cert/node1.test.com.cert
+        KeyFile: /etc/XrayR/cert/node1.test.com.key
+EOF
+
+CERT_PATH="/etc/XrayR/cert"
+mkdir -p "$CERT_PATH"
+
+cat >"$CERT_PATH/node1.test.com.cert" <<'EOF'
+-----BEGIN CERTIFICATE-----
+
+-----END CERTIFICATE-----
+
+EOF
+
+cat >"$CERT_PATH/node1.test.com.key" <<'EOF'
+-----BEGIN PRIVATE KEY-----
+
+-----END PRIVATE KEY-----
+
+EOF
+
+
+echo "[•] Tạo menu điều khiển /root/xrayr..."
+cat >/root/xrayr <<'MENU'
+#!/bin/bash
+while true; do
+  clear
+  echo "====== XrayR Menu ======"
+  echo "1. Chỉnh sửa cấu hình (/etc/XrayR/config.yml)"
+  echo "2. Khởi động lại XrayR"
+  echo "3. Gỡ cài đặt XrayR"
+  echo "0. Thoát"
+  echo "========================"
+  read -p "Chọn một tùy chọn: " choice
+  case $choice in
+    1) nano /etc/XrayR/config.yml ;;
+    2) xrayr restart ;;
+    3) xrayr uninstall ;;
+    0) exit ;;
+    *) echo "Lựa chọn không hợp lệ!" && sleep 1 ;;
+  esac
+done
+MENU
+
+chmod +x /root/xrayr
+
+
+echo "[•] Đang khởi động lại dịch vụ XrayR..."
+xrayr restart
+
+echo -e "\n✅ Đã hoàn tất cài đặt và cấu hình XrayR!"
+echo "👉 Bạn có thể chạy menu điều khiển bằng lệnh:  ./xrayr"
