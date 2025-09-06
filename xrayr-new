@@ -1,281 +1,168 @@
-clear
-echo "   1. Cài đặt"
-echo "   2. update"
-echo "   3. thêm node"
-read -p "  Vui lòng chọn một số và nhấn Enter (Enter theo mặc định Cài đặt)  " num
-[ -z "${num}" ] && num="1"
+#!/usr/bin/env bash
+set -euo pipefail
+echo "=== XrayR RU All-in-One (VMess:80 + Trojan:443 w/ Auto SSL via Cloudflare DNS-01) ==="
+[[ $EUID -ne 0 ]] && { echo "Vui lòng chạy với sudo/root"; exit 1; }
 
+# ========= 0) Nhập thông tin cần thiết =========
+read -p "API Host (VD: https://panel.domain.com): " API_HOST
+read -p "API Key (NewV2Board/V2Board): " API_KEY
+read -p "NodeID VMess (Reality, port 80) [157]: " NODE_VM; NODE_VM=${NODE_VM:-157}
+read -p "NodeID Trojan (gRPC+TLS, port 443) [319]: " NODE_TJ; NODE_TJ=${NODE_TJ:-319}
+echo "Trojan sẽ dùng SSL thật (Let's Encrypt). Cần domain trỏ A (DNS Only/xám mây) về IP VPS."
+read -p "Domain cho Trojan (VD: t1.domain.com): " DOMAIN
 
-install(){
-  clear
-  read -p " Nhập domain web (không cần https://):" api_host
-    [ -z "${api_host}" ] && api_host=0
-    echo "--------------------------------"
-  echo "Bạn đã chọn https://${api_host}"
-  echo "--------------------------------"
-  #key web
-  read -p " Nhập key web :" api_key
-    [ -z "${api_key}" ] && api_key=0
-  echo "--------------------------------"
-  echo "Bạn đã chọn https://${api_host}"
-  echo "--------------------------------"
-
-  pre_install
-  
-}
-	
-pre_install(){
- clear
-	read -p "Nhập số node cần cài và nhấn Enter (tối đa 2 node): " n
-	 [ -z "${n}" ] && n="1"
-    a=0
-    if [ "$n" -ge 2 ] ; then 
-    n="2"
+# ========= 1) Cloudflare API Token =========
+CF_TOKEN_FILE="/root/.cf_token"
+if [[ ! -s "$CF_TOKEN_FILE" ]]; then
+  echo "Không tìm thấy $CF_TOKEN_FILE. Dán Cloudflare API Token (quyền Zone:DNS Edit) rồi Enter:"
+  read -r CF_API_TOKEN_INPUT
+  [[ -z "$CF_API_TOKEN_INPUT" ]] && { echo "Token rỗng! Hủy."; exit 1; }
+  echo -n "$CF_API_TOKEN_INPUT" > "$CF_TOKEN_FILE"
+  chmod 600 "$CF_TOKEN_FILE"
+  unset CF_API_TOKEN_INPUT
 fi
-  while [ $a -lt $n ]
- do
- echo " node số $((a+1))"
+CF_API_TOKEN="$(cat "$CF_TOKEN_FILE")"
 
+# ========= 2) Cài gói & bật BBR =========
+export DEBIAN_FRONTEND=noninteractive
+apt update -y
+apt install -y curl wget nano jq lsof cron ca-certificates socat
+modprobe tcp_bbr || true
+cat >/etc/sysctl.d/99-xrayr-bbr.conf <<'EOF'
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+net.ipv4.tcp_fastopen=3
+net.ipv4.tcp_mtu_probing=1
+net.ipv4.ip_forward=1
+net.core.rmem_max=67108864
+net.core.wmem_max=67108864
+net.ipv4.tcp_rmem=4096 87380 33554432
+net.ipv4.tcp_wmem=4096 65536 33554432
+net.core.netdev_max_backlog=250000
+EOF
+sysctl --system >/dev/null
 
-  echo -e "[1] Vmess"
-  echo -e "[2] Vless"
-  echo -e "[3] trojan"
-  echo -e "[4] Shadowsocks"
-  read -p "chọn kiểu node(mặc định là vmess):" NodeType
-  if [ "$NodeType" == "1" ]; then
-    NodeType="V2ray"
-    EnableVless="false"
-    info="vmess"
-  elif [ "$NodeType" == "2" ]; then
-    NodeType="V2ray"
-    EnableVless="true"
-    info="Vless"
-  elif [ "$NodeType" == "3" ]; then
-    NodeType="Trojan"
-    EnableVless="false"
-    info="Trojan"
-    elif [ "$NodeType" == "4" ]; then
-    NodeType="Shadowsocks"
-    EnableVless="false"
-    info="Shadowsocks"
-  else
-    NodeType="V2ray"
-    EnableVless="false"
-    info="vmess"
-  fi
-  echo "Bạn đã chọn $info"
-  echo "--------------------------------"
+# ========= 3) Cài XrayR =========
+bash <(curl -Ls https://raw.githubusercontent.com/wyx2685/XrayR-release/master/install.sh)
 
+# ========= 4) Xin SSL qua Cloudflare DNS-01 =========
+CERT_PATH="/etc/XrayR/cert"; mkdir -p "$CERT_PATH"
+curl https://get.acme.sh | sh -s email="admin@$DOMAIN" >/dev/null 2>&1 || true
+export PATH="$HOME/.acme.sh:$PATH"
+systemctl stop xrayr 2>/dev/null || true
 
+export CF_Token="$CF_API_TOKEN"
+echo "[•] Yêu cầu chứng chỉ Let's Encrypt (DNS-01 Cloudflare) cho $DOMAIN ..."
+~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256 --force
 
-  #node id
-    read -p " ID nút (Node_ID):" node_id
-  [ -z "${node_id}" ] && node_id=0
-  echo "-------------------------------"
-  echo -e "Node_ID: ${node_id}"
-  echo "-------------------------------"
-  
+~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" --ecc \
+  --key-file       "$CERT_PATH/$DOMAIN.key" \
+  --fullchain-file "$CERT_PATH/$DOMAIN.crt" \
+  --reloadcmd     "systemctl reload xrayr || true"
 
- config
-  a=$((a+1))
-done
-}
+# Cron tự gia hạn hàng ngày
+(crontab -l 2>/dev/null; echo "13 3 * * * $HOME/.acme.sh/acme.sh --cron --home $HOME/.acme.sh > /dev/null") | crontab -
 
+# ========= 5) Tạo config XrayR =========
+REALITY_SNI="www.cloudflare.com"
+REALITY_SHORT_IDS=$(openssl rand -hex 8)
 
-
-#clone node
-clone_node(){
-  clear
-  read -p " Nhập domain web (không cần https://):" api_host
-    [ -z "${api_host}" ] && api_host=0
-    echo "--------------------------------"
-  echo "Bạn đã chọn https://${api_host}"
-  echo "--------------------------------"
-  #key web
-  read -p " Nhập key web :" api_key
-    [ -z "${api_key}" ] && api_key=0
-  echo "--------------------------------"
-  echo "Bạn đã chọn https://${api_host}"
-  echo "--------------------------------"
-
-  
-  echo -e "[1] Vmess"
-  echo -e "[2] Vless"
-  echo -e "[3] trojan"
-  echo -e "[4] Shadowsocks"
-  read -p "chọn kiểu node(mặc định là vmess):" NodeType
-  if [ "$NodeType" == "1" ]; then
-    NodeType="V2ray"
-    EnableVless="false"
-    info="vmess"
-  elif [ "$NodeType" == "2" ]; then
-    NodeType="V2ray"
-    EnableVless="true"
-    info="Vless"
-  elif [ "$NodeType" == "3" ]; then
-    NodeType="Trojan"
-    EnableVless="false"
-    info="Trojan"
-    elif [ "$NodeType" == "4" ]; then
-    NodeType="Shadowsocks"
-    EnableVless="false"
-    info="Shadowsocks"
-  else
-    NodeType="V2ray"
-    EnableVless="false"
-    info="vmess"
-  fi
-  echo "Bạn đã chọn $info"
-  echo "--------------------------------"
-
-
-
-
-
-  #node id
-    read -p " ID nút (Node_ID):" node_id
-  [ -z "${node_id}" ] && node_id=0
-  echo "-------------------------------"
-  echo -e "Node_ID: ${node_id}"
-  echo "-------------------------------"
- 
-
- config
-#   a=$((a+1))
-#   done
-}
-
-
-
-
-
-
-
-config(){
-cd /etc/XrayR
-cat >>config.yml<<EOF
-  - PanelType: "NewV2board" # Panel type:  NewV2board, V2board
+cat >/etc/XrayR/config.yml <<EOF
+Log:
+  Level: none
+Nodes:
+  - # ===== VMess + REALITY (port 80) =====
+    PanelType: "NewV2board"
     ApiConfig:
-      ApiHost: "https://$api_host"
-      ApiKey: "$api_key"
-      NodeID: $node_id
-      NodeType: $NodeType # Node type: V2ray, Shadowsocks, Trojan, Shadowsocks-Plugin
-      Timeout: 30 # Timeout for the api request
-      EnableVless: $EnableVless  # Enable Vless for V2ray Type
-      VlessFlow: "none" # Only support vless
-      SpeedLimit: 0 # Mbps, Local settings will replace remote settings, 0 means disable
-      DeviceLimit: 0 # Local settings will replace remote settings, 0 means disable
-      RuleListPath: # /etc/XrayR/rulelist Path to local rulelist file
-      DisableCustomConfig: false # disable custom config for sspanel
+      ApiHost: "${API_HOST}"
+      ApiKey: "${API_KEY}"
+      NodeID: ${NODE_VM}
+      NodeType: V2ray
+      Timeout: 30
     ControllerConfig:
-      DisableSniffing: true
-      ListenIP: 0.0.0.0 # IP address you want to listen
-      SendIP: 0.0.0.0 # IP address you want to send pacakage
-      UpdatePeriodic: 60 # Time to update the nodeinfo, how many sec.
-      EnableDNS: false # Use custom DNS config, Please ensure that you set the dns.json well
-      DNSType: AsIs # AsIs, UseIP, UseIPv4, UseIPv6, DNS strategy
-      EnableProxyProtocol: false # Only works for WebSocket and TCP
-      AutoSpeedLimitConfig:
-        Limit: 0 # Warned speed. Set to 0 to disable AutoSpeedLimit (mbps)
-        WarnTimes: 0 # After (WarnTimes) consecutive warnings, the user will be limited. Set to 0 to punish overspeed user immediately.
-        LimitSpeed: 0 # The speedlimit of a limited user (unit: mbps)
-        LimitDuration: 0 # How many minutes will the limiting last (unit: minute)
-      GlobalDeviceLimitConfig:
-        Enable: false # Enable the global device limit of a user
-        RedisAddr: 127.0.0.1:6379 # The redis server address
-        RedisPassword: YOUR PASSWORD # Redis password
-        RedisDB: 0 # Redis DB
-        Timeout: 5 # Timeout for redis request
-        Expiry: 60 # Expiry time (second)
-      EnableFallback: false # Only support for Trojan and Vless
-      FallBackConfigs:  # Support multiple fallbacks
-        - SNI: # TLS SNI(Server Name Indication), Empty for any
-          Alpn: # Alpn, Empty for any
-          Path: # HTTP PATH, Empty for any
-          Dest: 80 # Required, Destination of fallback, check https://xtls.github.io/config/features/fallback.html for details.
-          ProxyProtocolVer: 0 # Send PROXY protocol version, 0 for disable
-      DisableLocalREALITYConfig: false  # disable local reality config
-      EnableREALITY: false # Enable REALITY
+      EnableProxyProtocol: false
+      DisableLocalREALITYConfig: false
+      EnableREALITY: true
       REALITYConfigs:
-        Show: false # Show REALITY debug
-        Dest: www.smzdm.com:443 # Required, Same as fallback
-        ProxyProtocolVer: 0 # Send PROXY protocol version, 0 for disable
-        ServerNames: # Required, list of available serverNames for the client, * wildcard is not supported at the moment.
-          - www.smzdm.com
-        PrivateKey: YOUR_PRIVATE_KEY # Required, execute './xray x25519' to generate.
-        MinClientVer: # Optional, minimum version of Xray client, format is x.y.z.
-        MaxClientVer: # Optional, maximum version of Xray client, format is x.y.z.
-        MaxTimeDiff: 0 # Optional, maximum allowed time difference, unit is in milliseconds.
-        ShortIds: # Required, list of available shortIds for the client, can be used to differentiate between different clients.
-          - ""
-          - 0123456789abcdef
+        Show: true
+        Dest: "${REALITY_SNI}:443"
+        ServerNames:
+          - "${REALITY_SNI}"
+        PrivateKey: ""
+        ShortIds:
+          - "${REALITY_SHORT_IDS}"
+      ListenIP: 0.0.0.0
+      ListenPort: 80
+      SendIP: 0.0.0.0
       CertConfig:
-        CertMode: file # Option about how to get certificate: none, file, http, tls, dns. Choose "none" will forcedly disable the tls config.
-        CertDomain: "1.1.1.1" # Domain to cert
-        CertFile: /etc/XrayR/vpndata.crt # Provided if the CertMode is file
-        KeyFile: /etc/XrayR/vpndata.key
-        Provider: alidns # DNS cert provider, Get the full support list here: https://go-acme.github.io/lego/dns/
-        Email: test@me.com
-        DNSEnv: # DNS ENV option used by DNS provider
-          ALICLOUD_ACCESS_KEY: aaa
-          ALICLOUD_SECRET_KEY: bbb
+        CertMode: none
+
+  - # ===== Trojan + gRPC + TLS (port 443) =====
+    PanelType: "NewV2board"
+    ApiConfig:
+      ApiHost: "${API_HOST}"
+      ApiKey: "${API_KEY}"
+      NodeID: ${NODE_TJ}
+      NodeType: Trojan
+      Timeout: 30
+      EnableVless: false
+    ControllerConfig:
+      ListenIP: 0.0.0.0
+      ListenPort: 443
+      SendIP: 0.0.0.0
+      DeviceOnlineMinTraffic: 100
+      Transport:
+        Type: grpc
+        ServiceName: trojan-grpc
+      TLSConfig:
+        InsecureSkipVerify: false
+        EnableTLS: true
+      CertConfig:
+        CertMode: file
+        CertFile: "$CERT_PATH/$DOMAIN.crt"
+        KeyFile:  "$CERT_PATH/$DOMAIN.key"
 EOF
 
+# ========= 6) Menu quản trị =========
+cat >/root/xrayr <<'MENU'
+#!/usr/bin/env bash
+set -e
+while true; do
+  clear
+  echo "====== XrayR Menu ======"
+  echo "1) Xem log (tail 200)"
+  echo "2) Sửa /etc/XrayR/config.yml"
+  echo "3) Restart XrayR"
+  echo "4) Trạng thái dịch vụ"
+  echo "5) Uninstall XrayR"
+  echo "0) Thoát"
+  read -p "Chọn: " c
+  case "$c" in
+    1) journalctl -u xrayr -e --no-pager | tail -n 200; read -p "Enter để quay lại..." _ ;;
+    2) nano /etc/XrayR/config.yml ;;
+    3) systemctl restart xrayr ;;
+    4) systemctl status xrayr --no-pager; read -p "Enter để quay lại..." _ ;;
+    5) xrayr uninstall; exit 0 ;;
+    0) exit 0 ;;
+    *) echo "Lựa chọn không hợp lệ!"; sleep 1 ;;
+  esac
+done
+MENU
+chmod +x /root/xrayr
 
- }
+# ========= 7) Mở cổng nếu dùng UFW =========
+if command -v ufw >/dev/null 2>&1; then
+  ufw allow 80/tcp || true
+  ufw allow 443/tcp || true
+fi
 
-case "${num}" in
-1) bash <(curl -Ls https://raw.githubusercontent.com/qtai2901/skyht_xrayr/main/install.sh)
-openssl req -newkey rsa:2048 -x509 -sha256 -days 365 -nodes -out /etc/XrayR/vpndata.crt -keyout /etc/XrayR/vpndata.key -subj "/C=JP/ST=Tokyo/L=Chiyoda-ku/O=Google Trust Services LLC/CN=google.com"
-cd /etc/XrayR
-  cat >config.yml <<EOF
-Log:
-  Level: none # Log level: none, error, warning, info, debug 
-  AccessPath: # /etc/XrayR/access.Log
-  ErrorPath: # /etc/XrayR/error.log
-DnsConfigPath: # /etc/XrayR/dns.json # Path to dns config, check https://xtls.github.io/config/dns.html for help
-RouteConfigPath: # /etc/XrayR/route.json # Path to route config, check https://xtls.github.io/config/routing.html for help
-InboundConfigPath: # /etc/XrayR/custom_inbound.json # Path to custom inbound config, check https://xtls.github.io/config/inbound.html for help
-OutboundConfigPath: # /etc/XrayR/custom_outbound.json # Path to custom outbound config, check https://xtls.github.io/config/outbound.html for help
-ConnectionConfig:
-  Handshake: 4 # Handshake time limit, Second
-  ConnIdle: 30 # Connection idle time limit, Second
-  UplinkOnly: 2 # Time limit when the connection downstream is closed, Second
-  DownlinkOnly: 4 # Time limit when the connection is closed after the uplink is closed, Second
-  BufferSize: 64 # The internal cache size of each connection, kB
-Nodes:
-EOF
+# ========= 8) Khởi động =========
+systemctl enable xrayr
+systemctl restart xrayr
 
-install
-cd /root
-xrayr start
- ;;
- 2) cd /etc/XrayR
-cat >config.yml <<EOF
-Log:
-  Level: none # Log level: none, error, warning, info, debug 
-  AccessPath: # /etc/XrayR/access.Log
-  ErrorPath: # /etc/XrayR/error.log
-DnsConfigPath: # /etc/XrayR/dns.json # Path to dns config, check https://xtls.github.io/config/dns.html for help
-RouteConfigPath: # /etc/XrayR/route.json # Path to route config, check https://xtls.github.io/config/routing.html for help
-InboundConfigPath: # /etc/XrayR/custom_inbound.json # Path to custom inbound config, check https://xtls.github.io/config/inbound.html for help
-OutboundConfigPath: # /etc/XrayR/custom_outbound.json # Path to custom outbound config, check https://xtls.github.io/config/outbound.html for help
-ConnectionConfig:
-  Handshake: 4 # Handshake time limit, Second
-  ConnIdle: 30 # Connection idle time limit, Second
-  UplinkOnly: 2 # Time limit when the connection downstream is closed, Second
-  DownlinkOnly: 4 # Time limit when the connection is closed after the uplink is closed, Second
-  BufferSize: 64 # The internal cache size of each connection, kB
-Nodes:
-EOF
-
-install
-cd /root
-xrayr restart
- ;;
- 3) cd /etc/XrayR
- clone_node
- cd /root
-  xrayr restart
-;;
-esac
+echo
+echo "✅ Hoàn tất!"
+echo "• VMess-REALITY: cổng 80 (SNI ${REALITY_SNI})"
+echo "• Trojan gRPC + TLS: cổng 443 (cert Let's Encrypt)"
+echo "• Cert path: $CERT_PATH/$DOMAIN.crt | $CERT_PATH/$DOMAIN.key"
+echo "• Menu quản trị: /root/xrayr  (chạy: ./xrayr)"
