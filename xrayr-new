@@ -1,31 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "=== XrayR RU Installer (VMess:80 + Trojan:443 w/ Auto SSL via Cloudflare DNS-01) ==="
+echo "=== XrayR RU All-in-One (VMess:80 + Trojan:443 w/ Auto SSL via Cloudflare DNS-01) ==="
 [[ $EUID -ne 0 ]] && { echo "Vui lòng chạy với sudo/root"; exit 1; }
 
-# ========= 0) Thông tin Panel (fix sẵn) =========
+# ========= 0) Thông tin Panel & Token (được yêu cầu cố định) =========
 API_HOST="https://panel.kingvpn.vn"
 API_KEY="khiemdeptrailaso1"
+CF_API_TOKEN="YXyeZWbJbXcEGIKWBebrOb9NmeH_274E4El7yVEJ"   # ⚠️ bảo mật – không public
 
-# ========= 1) Nhập Node ID & Domain =========
+# ========= 1) Hỏi NodeID & Domain =========
 read -p "NodeID VMess (Reality, port 80) [157]: " NODE_VM; NODE_VM=${NODE_VM:-157}
 read -p "NodeID Trojan (gRPC+TLS, port 443) [319]: " NODE_TJ; NODE_TJ=${NODE_TJ:-319}
 echo "Trojan sẽ dùng SSL thật (Let's Encrypt). Cần domain trỏ A (DNS Only/xám mây) về IP VPS."
 read -p "Domain cho Trojan (VD: t1.kingvpn.vn): " DOMAIN
+[[ -z "$DOMAIN" ]] && { echo "Domain trống!"; exit 1; }
 
-# ========= 2) Cloudflare API Token =========
-CF_TOKEN_FILE="/root/.cf_token"
-if [[ ! -s "$CF_TOKEN_FILE" ]]; then
-  echo "Không tìm thấy $CF_TOKEN_FILE. Dán Cloudflare API Token (quyền Zone:DNS Edit) rồi Enter:"
-  read -r CF_API_TOKEN_INPUT
-  [[ -z "$CF_API_TOKEN_INPUT" ]] && { echo "Token rỗng! Hủy."; exit 1; }
-  echo -n "$CF_API_TOKEN_INPUT" > "$CF_TOKEN_FILE"
-  chmod 600 "$CF_TOKEN_FILE"
-  unset CF_API_TOKEN_INPUT
-fi
-CF_API_TOKEN="$(cat "$CF_TOKEN_FILE")"
+CERT_PATH="/etc/XrayR/cert"
+REALITY_SNI="www.cloudflare.com"
+REALITY_SHORT_IDS=$(openssl rand -hex 8)
 
-# ========= 3) Cài gói & bật BBR =========
+# ========= 2) Gói cần thiết & BBR =========
 export DEBIAN_FRONTEND=noninteractive
 apt update -y
 apt install -y curl wget nano jq lsof cron ca-certificates socat
@@ -36,14 +30,19 @@ net.ipv4.tcp_congestion_control=bbr
 net.ipv4.tcp_fastopen=3
 net.ipv4.tcp_mtu_probing=1
 net.ipv4.ip_forward=1
+net.core.rmem_max=67108864
+net.core.wmem_max=67108864
+net.ipv4.tcp_rmem=4096 87380 33554432
+net.ipv4.tcp_wmem=4096 65536 33554432
+net.core.netdev_max_backlog=250000
 EOF
 sysctl --system >/dev/null
 
-# ========= 4) Cài XrayR =========
+# ========= 3) Cài XrayR =========
 bash <(curl -Ls https://raw.githubusercontent.com/wyx2685/XrayR-release/master/install.sh)
 
-# ========= 5) Xin SSL qua Cloudflare DNS-01 =========
-CERT_PATH="/etc/XrayR/cert"; mkdir -p "$CERT_PATH"
+# ========= 4) Xin SSL qua Cloudflare DNS-01 (không hỏi) =========
+mkdir -p "$CERT_PATH"
 curl https://get.acme.sh | sh -s email="admin@$DOMAIN" >/dev/null 2>&1 || true
 export PATH="$HOME/.acme.sh:$PATH"
 systemctl stop xrayr 2>/dev/null || true
@@ -57,16 +56,14 @@ echo "[•] Yêu cầu chứng chỉ Let's Encrypt (DNS-01 Cloudflare) cho $DOMA
   --fullchain-file "$CERT_PATH/$DOMAIN.crt" \
   --reloadcmd     "systemctl reload xrayr || true"
 
-# Cron tự gia hạn hàng ngày
+# Cron auto-renew hàng ngày
 (crontab -l 2>/dev/null; echo "13 3 * * * $HOME/.acme.sh/acme.sh --cron --home $HOME/.acme.sh > /dev/null") | crontab -
 
-# ========= 6) Sinh config XrayR =========
-REALITY_SNI="www.cloudflare.com"
-REALITY_SHORT_IDS=$(openssl rand -hex 8)
-
+# ========= 5) GHI ĐÈ config.yml =========
 cat >/etc/XrayR/config.yml <<EOF
 Log:
   Level: none
+
 Nodes:
   - # ===== VMess + REALITY (port 80) =====
     PanelType: "NewV2board"
@@ -77,6 +74,8 @@ Nodes:
       NodeType: V2ray
       Timeout: 30
     ControllerConfig:
+      EnableProxyProtocol: false
+      DisableLocalREALITYConfig: false
       EnableREALITY: true
       REALITYConfigs:
         Show: true
@@ -118,7 +117,7 @@ Nodes:
         KeyFile:  "$CERT_PATH/$DOMAIN.key"
 EOF
 
-# ========= 7) Menu quản trị =========
+# ========= 6) Menu quản trị =========
 cat >/root/xrayr <<'MENU'
 #!/usr/bin/env bash
 set -e
@@ -145,21 +144,20 @@ done
 MENU
 chmod +x /root/xrayr
 
-# ========= 8) Firewall (nếu dùng UFW) =========
+# ========= 7) Firewall (nếu dùng UFW) =========
 if command -v ufw >/dev/null 2>&1; then
   ufw allow 80/tcp || true
   ufw allow 443/tcp || true
 fi
 
-# ========= 9) Khởi động =========
+# ========= 8) Khởi động dịch vụ =========
 systemctl enable xrayr
 systemctl restart xrayr
 
 echo
 echo "✅ Hoàn tất!"
-echo "• API_HOST: ${API_HOST}"
-echo "• API_KEY : ${API_KEY}"
-echo "• VMess-REALITY: cổng 80"
-echo "• Trojan-gRPC+TLS: cổng 443 (SSL Let's Encrypt qua Cloudflare)"
+echo "• Panel: ${API_HOST}"
+echo "• VMess-REALITY: cổng 80 (SNI ${REALITY_SNI})"
+echo "• Trojan gRPC + TLS: cổng 443 (cert Let's Encrypt qua Cloudflare)"
 echo "• Cert: $CERT_PATH/$DOMAIN.crt | $CERT_PATH/$DOMAIN.key"
 echo "• Menu quản trị: ./xrayr"
