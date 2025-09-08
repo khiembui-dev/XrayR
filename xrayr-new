@@ -1,163 +1,144 @@
-#!/usr/bin/env bash
-set -euo pipefail
-echo "=== XrayR RU All-in-One (VMess:80 + Trojan:443 w/ Auto SSL via Cloudflare DNS-01) ==="
-[[ $EUID -ne 0 ]] && { echo "Vui lòng chạy với sudo/root"; exit 1; }
+read -p "NODE ID vmess (default 157): " node_id_vm
+node_id_vm=${node_id_vm:-157}
 
-# ========= 0) Thông tin Panel & Token (được yêu cầu cố định) =========
-API_HOST="https://panel.kingvpn.vn"
-API_KEY="khiemdeptrailaso1"
-CF_API_TOKEN="YXyeZWbJbXcEGIKWBebrOb9NmeH_274E4El7yVEJ"   # ⚠️ bảo mật – không public
+read -p "NODE ID trojan (default 319): " node_id_tj
+node_id_tj=${node_id_tj:-319}
 
-# ========= 1) Hỏi NodeID & Domain =========
-read -p "NodeID VMess (Reality, port 80) [157]: " NODE_VM; NODE_VM=${NODE_VM:-157}
-read -p "NodeID Trojan (gRPC+TLS, port 443) [319]: " NODE_TJ; NODE_TJ=${NODE_TJ:-319}
-echo "Trojan sẽ dùng SSL thật (Let's Encrypt). Cần domain trỏ A (DNS Only/xám mây) về IP VPS."
-read -p "Domain cho Trojan (VD: t1.kingvpn.vn): " DOMAIN
-[[ -z "$DOMAIN" ]] && { echo "Domain trống!"; exit 1; }
-
-CERT_PATH="/etc/XrayR/cert"
-REALITY_SNI="www.cloudflare.com"
-REALITY_SHORT_IDS=$(openssl rand -hex 8)
-
-# ========= 2) Gói cần thiết & BBR =========
-export DEBIAN_FRONTEND=noninteractive
-apt update -y
-apt install -y curl wget nano jq lsof cron ca-certificates socat
-modprobe tcp_bbr || true
-cat >/etc/sysctl.d/99-xrayr-bbr.conf <<'EOF'
-net.core.default_qdisc=fq
-net.ipv4.tcp_congestion_control=bbr
-net.ipv4.tcp_fastopen=3
-net.ipv4.tcp_mtu_probing=1
-net.ipv4.ip_forward=1
-net.core.rmem_max=67108864
-net.core.wmem_max=67108864
-net.ipv4.tcp_rmem=4096 87380 33554432
-net.ipv4.tcp_wmem=4096 65536 33554432
-net.core.netdev_max_backlog=250000
-EOF
-sysctl --system >/dev/null
-
-# ========= 3) Cài XrayR =========
+echo "[•] Đang cài đặt XrayR..."
 bash <(curl -Ls https://raw.githubusercontent.com/wyx2685/XrayR-release/master/install.sh)
 
-# ========= 4) Xin SSL qua Cloudflare DNS-01 (không hỏi) =========
-mkdir -p "$CERT_PATH"
-curl https://get.acme.sh | sh -s email="admin@$DOMAIN" >/dev/null 2>&1 || true
-export PATH="$HOME/.acme.sh:$PATH"
-systemctl stop xrayr 2>/dev/null || true
 
-export CF_Token="$CF_API_TOKEN"
-echo "[•] Yêu cầu chứng chỉ Let's Encrypt (DNS-01 Cloudflare) cho $DOMAIN ..."
-~/.acme.sh/acme.sh --issue --dns dns_cf -d "$DOMAIN" --keylength ec-256 --force
+echo "[•] Đang tạo cấu hình tại /etc/XrayR/config.yml..."
+mkdir -p /etc/XrayR
 
-~/.acme.sh/acme.sh --install-cert -d "$DOMAIN" --ecc \
-  --key-file       "$CERT_PATH/$DOMAIN.key" \
-  --fullchain-file "$CERT_PATH/$DOMAIN.crt" \
-  --reloadcmd     "systemctl reload xrayr || true"
-
-# Cron auto-renew hàng ngày
-(crontab -l 2>/dev/null; echo "13 3 * * * $HOME/.acme.sh/acme.sh --cron --home $HOME/.acme.sh > /dev/null") | crontab -
-
-# ========= 5) GHI ĐÈ config.yml =========
 cat >/etc/XrayR/config.yml <<EOF
 Log:
   Level: none
-
 Nodes:
-  - # ===== VMess + REALITY (port 80) =====
+  -
     PanelType: "NewV2board"
     ApiConfig:
-      ApiHost: "${API_HOST}"
-      ApiKey: "${API_KEY}"
-      NodeID: ${NODE_VM}
+      ApiHost: "https://panel.kingvpn.vn"
+      ApiKey: "khiemdeptrailaso1"
+      NodeID: $node_id_vm
       NodeType: V2ray
       Timeout: 30
     ControllerConfig:
-      EnableProxyProtocol: false
-      DisableLocalREALITYConfig: false
-      EnableREALITY: true
-      REALITYConfigs:
-        Show: true
-        Dest: "${REALITY_SNI}:443"
-        ServerNames:
-          - "${REALITY_SNI}"
-        PrivateKey: ""
-        ShortIds:
-          - "${REALITY_SHORT_IDS}"
-      ListenIP: 0.0.0.0
-      ListenPort: 80
-      SendIP: 0.0.0.0
-      CertConfig:
-        CertMode: none
-
-  - # ===== Trojan + gRPC + TLS (port 443) =====
+      DeviceOnlineMinTraffic: 100
+  -
     PanelType: "NewV2board"
     ApiConfig:
-      ApiHost: "${API_HOST}"
-      ApiKey: "${API_KEY}"
-      NodeID: ${NODE_TJ}
+      ApiHost: "https://panel.kingvpn.vn"
+      ApiKey: "khiemdeptrailaso1"
+      NodeID: $node_id_tj
       NodeType: Trojan
       Timeout: 30
       EnableVless: false
     ControllerConfig:
-      ListenIP: 0.0.0.0
-      ListenPort: 443
-      SendIP: 0.0.0.0
       DeviceOnlineMinTraffic: 100
-      Transport:
-        Type: grpc
-        ServiceName: trojan-grpc
-      TLSConfig:
-        InsecureSkipVerify: false
-        EnableTLS: true
+      DisableLocalREALITYConfig: false
+      EnableREALITY: false
+      REALITYConfigs:
+        Show: true
       CertConfig:
         CertMode: file
-        CertFile: "$CERT_PATH/$DOMAIN.crt"
-        KeyFile:  "$CERT_PATH/$DOMAIN.key"
+        CertFile: /etc/XrayR/cert/node1.test.com.cert
+        KeyFile: /etc/XrayR/cert/node1.test.com.key
 EOF
 
-# ========= 6) Menu quản trị =========
+CERT_PATH="/etc/XrayR/cert"
+mkdir -p "$CERT_PATH"
+
+cat >"$CERT_PATH/node1.test.com.cert" <<'EOF'
+-----BEGIN CERTIFICATE-----
+MIIEFTCCAv2gAwIBAgIUdikjWRMC1zyBRKMswhcmL4RYfiswDQYJKoZIhvcNAQEL
+BQAwgagxCzAJBgNVBAYTAlVTMRMwEQYDVQQIEwpDYWxpZm9ybmlhMRYwFAYDVQQH
+Ew1TYW4gRnJhbmNpc2NvMRkwFwYDVQQKExBDbG91ZGZsYXJlLCBJbmMuMRswGQYD
+VQQLExJ3d3cuY2xvdWRmbGFyZS5jb20xNDAyBgNVBAMTK01hbmFnZWQgQ0EgM2Yz
+MGI1MWZkODI0NmI1MDM3ODM3OWJjNTJlNzAzNTUwHhcNMjUwOTA4MTU0MTAwWhcN
+MzUwOTA2MTU0MTAwWjAiMQswCQYDVQQGEwJVUzETMBEGA1UEAxMKQ2xvdWRmbGFy
+ZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALR5VnC9Ra7bykqdTTur
+F0uFRHonchLWZT5rwQQAvshYzI/+C8fMMBCpVuLuLcyG40H4jRQL27mcocpGF71x
+jT4sE4RGHXzsUlj2PBhYGfz9Zqf1SSTLC5M2y4NwyYVK96VSWASZzplbEkIh5uiW
+b1rKJtkSgJW9bzdlHoYLROzRDqXMHc1W2fQNJ4hZwSCygrEGMURGcV1DJ0mY/BuS
+hMegc28nqyfvG43RLbdI8w0stCIda/ieHucqCY1WTTYgWwplhPKcUt2G17UYT9l7
+oeVEj1Nwn9HhBIKapXIcZ0/33+TlBBhkXS0G3aiXpa8n0tNbD/VQj0FY/hd1Bt58
+gKMCAwEAAaOBuzCBuDATBgNVHSUEDDAKBggrBgEFBQcDAjAMBgNVHRMBAf8EAjAA
+MB0GA1UdDgQWBBQUVcqrlOG+CJRGbjwIEyKC90KKSjAfBgNVHSMEGDAWgBQPJore
+iAYMGbaQrtqq2Vzy6G5l4zBTBgNVHR8ETDBKMEigRqBEhkJodHRwOi8vY3JsLmNs
+b3VkZmxhcmUuY29tL2ZiOGRiY2VmLWZlMjMtNDBkOS1hYjU2LWM1MTZjMmU4ODFl
+Zi5jcmwwDQYJKoZIhvcNAQELBQADggEBACW7heqYlWmROLlOL1Fs2Q/yRYQeMX0T
+hD+DE5OUktwotP+89sSfIzsXTYgPHlemnv5OoDfOr2m9vSc2Qjt0zrpw9aHob/7d
+VQpHsU0zuvGdg9pKETXaRKc+ZE8RH4geeRwvsQb6sFlh11rFpHHPe/wy5cByq+9a
+kxnAMO273m6SnSvgBPooU/KvwKOFmeF3j7k/M3zRRJvoyVCuUpkiKIwd7HqX/QWT
+DYtCUfkxLxoBD1+jT8dxOXsk46y2NWwBVbGNU65Qi3a9dhB5kvOBqVPUs95g8ADy
+X5X9Vz9PeoHOJVsIo4mYpcsR+GiGvngPyF6++c/9pIIoka7IG/cQKwc=
+-----END CERTIFICATE-----
+
+
+EOF
+
+cat >"$CERT_PATH/node1.test.com.key" <<'EOF'
+-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC0eVZwvUWu28pK
+nU07qxdLhUR6J3IS1mU+a8EEAL7IWMyP/gvHzDAQqVbi7i3MhuNB+I0UC9u5nKHK
+Rhe9cY0+LBOERh187FJY9jwYWBn8/Wan9UkkywuTNsuDcMmFSvelUlgEmc6ZWxJC
+Iebolm9ayibZEoCVvW83ZR6GC0Ts0Q6lzB3NVtn0DSeIWcEgsoKxBjFERnFdQydJ
+mPwbkoTHoHNvJ6sn7xuN0S23SPMNLLQiHWv4nh7nKgmNVk02IFsKZYTynFLdhte1
+GE/Ze6HlRI9TcJ/R4QSCmqVyHGdP99/k5QQYZF0tBt2ol6WvJ9LTWw/1UI9BWP4X
+dQbefICjAgMBAAECggEAAexrJe92fysbiFkN2i10JZtpg+3IsvezA4vNdlf1sJf1
+sjEwefQsrPjJEskcFtp3MJxQEJ8hu+Q1+zxtA1li+n8oxBelN9Ai/oy9TjseJ8qh
+nfeozGoXmP2UBLYeh7upUQtEIeRrxcmpM6g92EvGKw8Ng/HFChOHTG1Y+m/DT8zU
+BSuq/0JOy04MEPzcoIoXtNJBwa+YHd4X0uvBjD6Bu31Gz/8/NuxdUvt4C3Wn9aRQ
+nr3piA05vykgqhjD8lHnXpaT97XzjtlSmLAxLwHlLIlHo4nr2Vf42pdYf4Sw9EfC
+Hmf92z3zRkOqTdi7FmC/R46dKxA44KFQAhO7QOBnBQKBgQDoOCWFzLgDtXBNuHBh
+V+975uhJbgkM4iL7jm2kqKkIR0jwFf3rgdsE2qPB7gI6/ZqxFV+RaJszEJ8qglTv
+9b3DA7cgM41Y4gD4o2/ALrXCoCam2XDbnevErprKFm+tFZxzw64iIDBqpXmmZV0D
+AznV0/yCqsv+N1iR5DEBRdKkbQKBgQDG9KMM8UyJycHqG82pTbh9wA0zij7uTIDb
+R4JljxzODIZQfOABMJYa+IWN5Zs6Dxpv4R3GyOhshWiq6vZaeLKaxxzfavn8ze/+
+N6ssdK9y/pUju5SbPbxel0VGm+0O5lnPZA9jQh+ZwgfI8R7OPsX7a4aZ3s6fBSri
+zahSVqLvTwKBgQC2OfkX+gIcxvCNzMJDYSII9LYriTGI7pvNE4Nuxvt+B5Jw9JEB
+kjEwqfH/aKpPaFtPwxnvnUrM06pTTVshwpFayzuVBV9R9GgWtQoooX74b3xlShSK
+Am7VNL86/kg8Zs0S+udW2DOmPJwtuzU1+/4SkfuA/k59+yiBs7PQ793QMQKBgGOe
+dNHzNJ69jkIZn9XJG7qjYjjPXQlW9yJU4P7XNNYbQVml3UfbOx3QGJdfQ2VD0Ln6
+Xz18tZw5BJqoQag1TUDguB1KZFfoCeYhm60L1BnhTW3x68v7kolOdxqO0pkmUAvf
+DzFlF4uWsu0zhnhAyENGqMP84zqOjNW5ojFwPe9TAoGBANbjFCxROcRbJChxl9R9
+HbZaASAJkVih1mDMKEJ+PQujT3hiz387kds7PdOI0bR1G8X3Y7Z328TNodCuv91Q
+cZ8vX6/e6bRwcVA762RkUbdZ+lLpHieIWVhzCqM8LY6sl9sn0i/Q4+J598t7kDIi
+nxhMEyX5uvwIfUQqwREDKiYc
+-----END PRIVATE KEY-----
+
+
+EOF
+
+
+echo "[•] Tạo menu điều khiển /root/xrayr..."
 cat >/root/xrayr <<'MENU'
-#!/usr/bin/env bash
-set -e
+#!/bin/bash
 while true; do
   clear
   echo "====== XrayR Menu ======"
-  echo "1) Xem log (tail 200)"
-  echo "2) Sửa /etc/XrayR/config.yml"
-  echo "3) Restart XrayR"
-  echo "4) Trạng thái dịch vụ"
-  echo "5) Uninstall XrayR"
-  echo "0) Thoát"
-  read -p "Chọn: " c
-  case "$c" in
-    1) journalctl -u xrayr -e --no-pager | tail -n 200; read -p "Enter để quay lại..." _ ;;
-    2) nano /etc/XrayR/config.yml ;;
-    3) systemctl restart xrayr ;;
-    4) systemctl status xrayr --no-pager; read -p "Enter để quay lại..." _ ;;
-    5) xrayr uninstall; exit 0 ;;
-    0) exit 0 ;;
-    *) echo "Lựa chọn không hợp lệ!"; sleep 1 ;;
+  echo "1. Chỉnh sửa cấu hình (/etc/XrayR/config.yml)"
+  echo "2. Khởi động lại XrayR"
+  echo "3. Gỡ cài đặt XrayR"
+  echo "0. Thoát"
+  echo "========================"
+  read -p "Chọn một tùy chọn: " choice
+  case $choice in
+    1) nano /etc/XrayR/config.yml ;;
+    2) xrayr restart ;;
+    3) xrayr uninstall ;;
+    0) exit ;;
+    *) echo "Lựa chọn không hợp lệ!" && sleep 1 ;;
   esac
 done
 MENU
+
 chmod +x /root/xrayr
 
-# ========= 7) Firewall (nếu dùng UFW) =========
-if command -v ufw >/dev/null 2>&1; then
-  ufw allow 80/tcp || true
-  ufw allow 443/tcp || true
-fi
 
-# ========= 8) Khởi động dịch vụ =========
-systemctl enable xrayr
-systemctl restart xrayr
+echo "[•] Đang khởi động lại dịch vụ XrayR..."
+xrayr restart
 
-echo
-echo "✅ Hoàn tất!"
-echo "• Panel: ${API_HOST}"
-echo "• VMess-REALITY: cổng 80 (SNI ${REALITY_SNI})"
-echo "• Trojan gRPC + TLS: cổng 443 (cert Let's Encrypt qua Cloudflare)"
-echo "• Cert: $CERT_PATH/$DOMAIN.crt | $CERT_PATH/$DOMAIN.key"
-echo "• Menu quản trị: ./xrayr"
+echo -e "\n✅ Đã hoàn tất cài đặt và cấu hình XrayR!"
+echo "👉 Bạn có thể chạy menu điều khiển bằng lệnh:  ./xrayr"
