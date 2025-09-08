@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ====== CẤU HÌNH MẶC ĐỊNH ======
+API_HOST="https://panel.kingvpn.vn"
+API_KEY="khiemdeptrailaso1"
+DEFAULT_NODEID_VMESS=157
+DEFAULT_NODEID_TROJAN=319
+
+CERT_DIR="/etc/XrayR/cert"
+CERT_FILE="$CERT_DIR/node1.test.com.cert"
+KEY_FILE="$CERT_DIR/node1.test.com.key"
+CONFIG_FILE="/etc/XrayR/config.yml"
+
+# ====== NHẬP THÔNG TIN ======
+read -p "NODE ID VMess (default ${DEFAULT_NODEID_VMESS}): " node_id_vm
+node_id_vm=${node_id_vm:-$DEFAULT_NODEID_VMESS}
+
+read -p "NODE ID Trojan (default ${DEFAULT_NODEID_TROJAN}): " node_id_tj
+node_id_tj=${node_id_tj:-$DEFAULT_NODEID_TROJAN}
+
+echo "Chọn loại cài đặt node:"
+echo "  1) Chỉ VMess"
+echo "  2) Chỉ Trojan (TLS)"
+echo "  3) Cả VMess + Trojan (mặc định)"
+read -p "Lựa chọn [1/2/3]: " mode
+mode=${mode:-3}
+
+# ====== CÀI ĐẶT XRAYR ======
+echo "[•] Đang cài đặt XrayR..."
+bash <(curl -Ls https://raw.githubusercontent.com/wyx2685/XrayR-release/master/install.sh)
+
+# ====== TẠO THƯ MỤC / CERT ======
+echo "[•] Tạo chứng chỉ TLS vào $CERT_DIR ..."
+install -d -m 755 "$CERT_DIR"
+
+# Ghi CERT (theo nội dung bạn cung cấp)
+cat >"$CERT_FILE" <<'EOF'
+-----BEGIN CERTIFICATE-----
+MIIEFTCCAv2gAwIBAgIUdikjWRMC1zyBRKMswhcmL4RYfiswDQYJKoZIhvcNAQEL
+BQAwgagxCzAJBgNVBAYTAlVTMRMwEQYDVQQIEwpDYWxpZm9ybmlhMRYwFAYDVQQH
+Ew1TYW4gRnJhbmNpc2NvMRkwFwYDVQQKExBDbG91ZGZsYXJlLCBJbmMuMRswGQYD
+VQQLExJ3d3cuY2xvdWRmbGFyZS5jb20xNDAyBgNVBAMTK01hbmFnZWQgQ0EgM2Yz
+MGI1MWZkODI0NmI1MDM3ODM3OWJjNTJlNzAzNTUwHhcNMjUwOTA4MTU0MTAwWhcN
+MzUwOTA2MTU0MTAwWjAiMQswCQYDVQQGEwJVUzETMBEGA1UEAxMKQ2xvdWRmbGFy
+ZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALR5VnC9Ra7bykqdTTur
+F0uFRHonchLWZT5rwQQAvshYzI/+C8fMMBCpVuLuLcyG40H4jRQL27mcocpGF71x
+jT4sE4RGHXzsUlj2PBhYGfz9Zqf1SSTLC5M2y4NwyYVK96VSWASZzplbEkIh5uiW
+b1rKJtkSgJW9bzdlHoYLROzRDqXMHc1W2fQNJ4hZwSCygrEGMURGcV1DJ0mY/BuS
+hMegc28nqyfvG43RLbdI8w0stCIda/ieHucqCY1WTTYgWwplhPKcUt2G17UYT9l7
+oeVEj1Nwn9HhBIKapXIcZ0/33+TlBBhkXS0G3aiXpa8n0tNbD/VQj0FY/hd1Bt58
+gKMCAwEAAaOBuzCBuDATBgNVHSUEDDAKBggrBgEFBQcDAjAMBgNVHRMBAf8EAjAA
+MB0GA1UdDgQWBBQUVcqrlOG+CJRGbjwIEyKC90KKSjAfBgNVHSMEGDAWgBQPJore
+iAYMGbaQrtqq2Vzy6G5l4zBTBgNVHR8ETDBKMEigRqBEhkJodHRwOi8vY3JsLmNs
+b3VkZmxhcmUuY29tL2ZiOGRiY2VmLWZlMjMtNDBkOS1hYjU2LWM1MTZjMmU4ODFl
+Zi5jcmwwDQYJKoZIhvcNAQELBQADggEBACW7heqYlWmROLlOL1Fs2Q/yRYQeMX0T
+hD+DE5OUktwotP+89sSfIzsXTYgPHlemnv5OoDfOr2m9vSc2Qjt0zrpw9aHob/7d
+VQpHsU0zuvGdg9pKETXaRKc+ZE8RH4geeRwvsQb6sFlh11rFpHHPe/wy5cByq+9a
+kxnAMO273m6SnSvgBPooU/KvwKOFmeF3j7k/M3zRRJvoyVCuUpkiKIwd7HqX/QWT
+DYtCUfkxLxoBD1+jT8dxOXsk46y2NWwBVbGNU65Qi3a9dhB5kvOBqVPUs95g8ADy
+X5X9Vz9PeoHOJVsIo4mYpcsR+GiGvngPyF6++c/9pIIoka7IG/cQKwc=
+-----END CERTIFICATE-----
+EOF
+
+# Ghi KEY
+cat >"$KEY_FILE" <<'EOF'
+-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC0eVZwvUWu28pK
+nU07qxdLhUR6J3IS1mU+a8EEAL7IWMyP/gvHzDAQqVbi7i3MhuNB+I0UC9u5nKHK
+Rhe9cY0+LBOERh187FJY9jwYWBn8/Wan9UkkywuTNsuDcMmFSvelUlgEmc6ZWxJC
+Iebolm9ayibZEoCVvW83ZR6GC0Ts0Q6lzB3NVtn0DSeIWcEgsoKxBjFERnFdQydJ
+mPwbkoTHoHNvJ6sn7xuN0S23SPMNLLQiHWv4nh7nKgmNVk02IFsKZYTynFLdhte1
+GE/Ze6HlRI9TcJ/R4QSCmqVyHGdP99/k5QQYZF0tBt2ol6WvJ9LTWw/1UI9BWP4X
+dQbefICjAgMBAAECggEAAexrJe92fysbiFkN2i10JZtpg+3IsvezA4vNdlf1sJf1
+sjEwefQsrPjJEskcFtp3MJxQEJ8hu+Q1+zxtA1li+n8oxBelN9Ai/oy9TjseJ8qh
+nfeozGoXmP2UBLYeh7upUQtEIeRrxcmpM6g92EvGKw8Ng/HFChOHTG1Y+m/DT8zU
+BSuq/0JOy04MEPzcoIoXtNJBwa+YHd4X0uvBjD6Bu31Gz/8/NuxdUvt4C3Wn9aRQ
+nr3piA05vykgqhjD8lHnXpaT97XzjtlSmLAxLwHlLIlHo4nr2Vf42pdYf4Sw9EfC
+Hmf92z3zRkOqTdi7FmC/R46dKxA44KFQAhO7QOBnBQKBgQDoOCWFzLgDtXBNuHBh
+V+975uhJbgkM4iL7jm2kqKkIR0jwFf3rgdsE2qPB7gI6/ZqxFV+RaJszEJ8qglTv
+9b3DA7cgM41Y4gD4o2/ALrXCoCam2XDbnevErprKFm+tFZxzw64iIDBqpXmmZV0D
+AznV0/yCqsv+N1iR5DEBRdKkbQKBgQDG9KMM8UyJycHqG82pTbh9wA0zij7uTIDb
+R4JljxzODIZQfOABMJYa+IWN5Zs6Dxpv4R3GyOhshWiq6vZaeLKaxxzfavn8ze/+
+N6ssdK9y/pUju5SbPbxel0VGm+0O5lnPZA9jQh+ZwgfI8R7OPsX7a4aZ3s6fBSri
+zahSVqLvTwKBgQC2OfkX+gIcxvCNzMJDYSII9LYriTGI7pvNE4Nuxvt+B5Jw9JEB
+kjEwqfH/aKpPaFtPwxnvnUrM06pTTVshwpFayzuVBV9R9GgWtQoooX74b3xlShSK
+Am7VNL86/kg8Zs0S+udW2DOmPJwtuzU1+/4SkfuA/k59+yiBs7PQ793QMQKBgGOe
+dNHzNJ69jkIZn9XJG7qjYjjPXQlW9yJU4P7XNNYbQVml3UfbOx3QGJdfQ2VD0Ln6
+Xz18tZw5BJqoQag1TUDguB1KZFfoCeYhm60L1BnhTW3x68v7kolOdxqO0pkmUAvf
+DzFlF4uWsu0zhnhAyENGqMP84zqOjNW5ojFwPe9TAoGBANbjFCxROcRbJChxl9R9
+HbZaASAJkVih1mDMKEJ+PQujT3hiz387kds7PdOI0bR1G8X3Y7Z328TNodCuv91Q
+cZ8vX6/e6bRwcVA762RkUbdZ+lLpHieIWVhzCqM8LY6sl9sn0i/Q4+J598t7kDIi
+nxhMEyX5uvwIfUQqwREDKiYc
+-----END PRIVATE KEY-----
+EOF
+
+chmod 600 "$KEY_FILE" || true
+chmod 644 "$CERT_FILE" || true
+
+# ====== SINH CONFIG.YML ======
+echo "[•] Tạo cấu hình $CONFIG_FILE ..."
+install -d -m 755 /etc/XrayR
+
+cat >"$CONFIG_FILE" <<EOF
+Log:
+  Level: info
+  AccessPath:
+  ErrorPath:
+
+Nodes:
+EOF
+
+# Node VMess
+if [[ "$mode" == "1" || "$mode" == "3" ]]; then
+cat >>"$CONFIG_FILE" <<EOF
+  - PanelType: "NewV2board"
+    ApiConfig:
+      ApiHost: "${API_HOST}"
+      ApiKey: "${API_KEY}"
+      NodeID: ${node_id_vm}
+      NodeType: V2ray
+      Timeout: 30
+    ControllerConfig:
+      UpdatePeriodic: 10
+      EnableDNS: false
+      DNSType: AsIs
+      DeviceOnlineMinTraffic: 100
+      EnableProxyProtocol: false
+      DisableLocalREALITYConfig: false
+      EnableREALITY: false
+EOF
+fi
+
+# Node Trojan (TLS)
+if [[ "$mode" == "2" || "$mode" == "3" ]]; then
+cat >>"$CONFIG_FILE" <<EOF
+  - PanelType: "NewV2board"
+    ApiConfig:
+      ApiHost: "${API_HOST}"
+      ApiKey: "${API_KEY}"
+      NodeID: ${node_id_tj}
+      NodeType: Trojan
+      Timeout: 30
+    ControllerConfig:
+      UpdatePeriodic: 10
+      EnableDNS: false
+      DNSType: AsIs
+      DeviceOnlineMinTraffic: 100
+      EnableProxyProtocol: false
+      DisableLocalREALITYConfig: false
+      EnableREALITY: false
+      REALITYConfigs:
+        Show: true
+      CertConfig:
+        CertMode: file
+        CertFile: ${CERT_FILE}
+        KeyFile: ${KEY_FILE}
+EOF
+fi
+
+# ====== MENU TIỆN ÍCH ======
+cat >/root/xrayr <<'MENU'
+#!/usr/bin/env bash
+while true; do
+  clear
+  echo "====== XrayR Menu ======"
+  echo "1) Sửa config (/etc/XrayR/config.yml)"
+  echo "2) Restart XrayR"
+  echo "3) Uninstall XrayR"
+  echo "0) Thoát"
+  echo "========================"
+  read -p "Chọn: " c
+  case "$c" in
+    1) ${EDITOR:-nano} /etc/XrayR/config.yml ;;
+    2) XrayR restart || systemctl restart XrayR ;;
+    3) XrayR uninstall ;;
+    0) exit 0 ;;
+    *) echo "Lựa chọn không hợp lệ!"; sleep 1 ;;
+  esac
+done
+MENU
+chmod +x /root/xrayr
+
+# ====== KHỞI ĐỘNG LẠI DỊCH VỤ ======
+echo "[•] Khởi động lại XrayR…"
+XrayR restart || systemctl restart XrayR
+
+echo -e "\n✅ Hoàn tất! File config: $CONFIG_FILE"
+echo "👉 Mở menu nhanh:  /root/xrayr"
