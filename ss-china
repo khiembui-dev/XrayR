@@ -1,0 +1,57 @@
+#!/bin/bash
+
+# Bước 1: Nhập node ID
+read -p "NODE ID ss: " node_id
+[ -z "${node_id}" ] && node_id=0
+
+# Bước 2: Cài đặt XrayR
+bash <(curl -Ls https://raw.githubusercontent.com/wyx2685/XrayR-release/master/install.sh)
+
+# Bước 3: Tạo file cấu hình
+mkdir -p /etc/XrayR
+cat >/etc/XrayR/config.yml <<EOF
+Log:
+  Level: none
+Nodes:
+  -
+    PanelType: "NewV2board"
+    ApiConfig:
+      ApiHost: "https://panel.kingvpn.vn"
+      ApiKey: "khiemdeptrailaso1"
+      NodeID: $node_id
+      NodeType: Shadowsocks
+      Timeout: 30
+    ControllerConfig:
+      DeviceOnlineMinTraffic: 100
+      EnableProxyProtocol: true
+EOF
+
+# Bước 4: Tạo file menu ./xrayr
+cat >/root/xrayr <<'MENU'
+#!/bin/bash
+while true; do
+  clear
+  echo "====== XrayR Menu ======"
+  echo "1. Chỉnh sửa cấu hình"
+  echo "2. Khởi động lại XrayR"
+  echo "3. Gỡ cài đặt XrayR"
+  echo "0. Thoát"
+  echo "========================"
+  read -p "Chọn một tùy chọn: " choice
+  case $choice in
+    1) nano /etc/XrayR/config.yml ;;
+    2) xrayr restart ;;
+    3) xrayr uninstall ;;
+    0) exit ;;
+    *) echo "Lựa chọn không hợp lệ!" && sleep 1 ;;
+  esac
+done
+MENU
+
+# Cấp quyền thực thi cho file menu
+chmod +x /root/xrayr
+
+# Bước 5: Khởi động lại XrayR lần đầu
+xrayr restart
+
+echo -e "\n✅ Cài đặt hoàn tất. Bạn có thể chạy menu bằng lệnh: \n  ./xrayr"
