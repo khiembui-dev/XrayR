@@ -1,0 +1,265 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# =======================
+#  CONFIG MẶC ĐỊNH (SỬA TÙY Ý)
+# =======================
+API_HOST="https://panel.kingvpn.vn"
+API_KEY="khiemdeptrailaso1"
+
+DEFAULT_NODEID_VMESS=157
+DEFAULT_NODEID_TROJAN=319
+DEFAULT_NODEID_VLESS=157
+DEFAULT_NODEID_SS=400
+
+XRAYR_CONFIG="/etc/XrayR/config.yml"
+CERT_DIR="/etc/XrayR/cert"
+CERT_FILE="$CERT_DIR/node1.test.com.cert"
+KEY_FILE="$CERT_DIR/node1.test.com.key"
+ACCESS_LOG="/etc/XrayR/access.log"
+ERROR_LOG="/etc/XrayR/error.log"
+
+# =======================
+#  MENU CHỌN GIAO THỨC
+# =======================
+echo "Chọn loại cài đặt node:"
+echo "  1) Chỉ VMess"
+echo "  2) Chỉ Trojan (TLS)"
+echo "  3) Chỉ VLESS (TLS – gRPC)"
+echo "  4) VMess + Trojan + VLESS (mặc định)"
+echo "  5) Chỉ Shadowsocks (SS)"
+read -p "Lựa chọn [1/2/3/4/5]: " MODE
+MODE="${MODE:-4}"
+
+# =======================
+#  HỎI NODE ID THEO CHẾ ĐỘ
+# =======================
+case "$MODE" in
+  1)
+    read -p "NODE ID VMess (default ${DEFAULT_NODEID_VMESS}): " NODE_VMESS
+    NODE_VMESS="${NODE_VMESS:-$DEFAULT_NODEID_VMESS}"
+    ;;
+  2)
+    read -p "NODE ID Trojan (default ${DEFAULT_NODEID_TROJAN}): " NODE_TROJAN
+    NODE_TROJAN="${NODE_TROJAN:-$DEFAULT_NODEID_TROJAN}"
+    ;;
+  3)
+    read -p "NODE ID VLESS (TLS – gRPC) (default ${DEFAULT_NODEID_VLESS}): " NODE_VLESS
+    NODE_VLESS="${NODE_VLESS:-$DEFAULT_NODEID_VLESS}"
+    ;;
+  4)
+    read -p "NODE ID VMess (default ${DEFAULT_NODEID_VMESS}): " NODE_VMESS
+    NODE_VMESS="${NODE_VMESS:-$DEFAULT_NODEID_VMESS}"
+    read -p "NODE ID Trojan (default ${DEFAULT_NODEID_TROJAN}): " NODE_TROJAN
+    NODE_TROJAN="${NODE_TROJAN:-$DEFAULT_NODEID_TROJAN}"
+    read -p "NODE ID VLESS (TLS – gRPC) (default ${DEFAULT_NODEID_VLESS}): " NODE_VLESS
+    NODE_VLESS="${NODE_VLESS:-$DEFAULT_NODEID_VLESS}"
+    ;;
+  5)
+    read -p "NODE ID Shadowsocks (default ${DEFAULT_NODEID_SS}): " NODE_SS
+    NODE_SS="${NODE_SS:-$DEFAULT_NODEID_SS}"
+    ;;
+  *)
+    echo "Lựa chọn không hợp lệ"; exit 1;;
+esac
+
+# =======================
+#  CÀI XRAYR
+# =======================
+echo "[•] Cài đặt XrayR…"
+bash <(curl -Ls https://raw.githubusercontent.com/wyx2685/XrayR-release/master/install.sh)
+
+# =======================
+#  CHUẨN BỊ THƯ MỤC & LOG
+# =======================
+install -d -m 755 /etc/XrayR
+install -d -m 755 "$CERT_DIR"
+touch "$ACCESS_LOG" "$ERROR_LOG"
+chmod 644 "$ACCESS_LOG" "$ERROR_LOG"
+
+# Nếu bạn có CERT thật, dán ở đây; tạm thời dùng placeholder
+if [[ ! -s "$CERT_FILE" ]]; then
+  cat >"$CERT_FILE" <<'EOF'
+-----BEGIN CERTIFICATE-----
+(PASTE CERT THẬT Ở ĐÂY)
+-----END CERTIFICATE-----
+EOF
+fi
+if [[ ! -s "$KEY_FILE" ]]; then
+  cat >"$KEY_FILE" <<'EOF'
+-----BEGIN PRIVATE KEY-----
+(PASTE PRIVATE KEY THẬT Ở ĐÂY)
+-----END PRIVATE KEY-----
+EOF
+fi
+chmod 600 "$KEY_FILE" || true
+chmod 644 "$CERT_FILE" || true
+
+# =======================
+#  HÀM APPEND NODE
+# =======================
+append_vmess() {
+cat >>"$XRAYR_CONFIG" <<EOF
+  - PanelType: "NewV2board"
+    ApiConfig:
+      ApiHost: "${API_HOST}"
+      ApiKey: "${API_KEY}"
+      NodeID: ${NODE_VMESS}
+      NodeType: V2ray
+      Timeout: 30
+    ControllerConfig:
+      ListenIP: 0.0.0.0
+      SendIP: 0.0.0.0
+      UpdatePeriodic: 10
+      EnableDNS: false
+      DNSType: AsIs
+      DeviceOnlineMinTraffic: 100
+      EnableProxyProtocol: false
+      DisableLocalREALITYConfig: true
+      EnableREALITY: false
+EOF
+}
+
+append_trojan() {
+cat >>"$XRAYR_CONFIG" <<EOF
+  - PanelType: "NewV2board"
+    ApiConfig:
+      ApiHost: "${API_HOST}"
+      ApiKey: "${API_KEY}"
+      NodeID: ${NODE_TROJAN}
+      NodeType: Trojan
+      Timeout: 30
+    ControllerConfig:
+      ListenIP: 0.0.0.0
+      SendIP: 0.0.0.0
+      UpdatePeriodic: 10
+      EnableDNS: false
+      DNSType: AsIs
+      DeviceOnlineMinTraffic: 100
+      EnableProxyProtocol: false
+      DisableLocalREALITYConfig: true
+      EnableREALITY: false
+      CertConfig:
+        CertMode: file
+        CertFile: ${CERT_FILE}
+        KeyFile: ${KEY_FILE}
+EOF
+}
+
+append_vless_tls() {
+cat >>"$XRAYR_CONFIG" <<EOF
+  - PanelType: "NewV2board"
+    ApiConfig:
+      ApiHost: "${API_HOST}"
+      ApiKey: "${API_KEY}"
+      NodeID: ${NODE_VLESS}
+      NodeType: V2ray
+      Timeout: 30
+      EnableVless: true
+      VlessFlow: ""               # TLS thuần (không REALITY)
+    ControllerConfig:
+      ListenIP: 0.0.0.0
+      SendIP: 0.0.0.0
+      UpdatePeriodic: 10
+      EnableDNS: false
+      DNSType: AsIs
+      DeviceOnlineMinTraffic: 100
+      EnableProxyProtocol: false
+      DisableLocalREALITYConfig: true
+      EnableREALITY: false
+      CertConfig:
+        CertMode: file
+        CertFile: ${CERT_FILE}
+        KeyFile: ${KEY_FILE}
+EOF
+}
+
+append_shadowsocks() {
+cat >>"$XRAYR_CONFIG" <<EOF
+  - PanelType: "NewV2board"
+    ApiConfig:
+      ApiHost: "${API_HOST}"
+      ApiKey: "${API_KEY}"
+      NodeID: ${NODE_SS}
+      NodeType: Shadowsocks
+      Timeout: 30
+    ControllerConfig:
+      ListenIP: 0.0.0.0
+      SendIP: 0.0.0.0
+      UpdatePeriodic: 10
+      EnableDNS: false
+      DNSType: AsIs
+      DeviceOnlineMinTraffic: 100
+      EnableProxyProtocol: false
+      DisableLocalREALITYConfig: true
+      EnableREALITY: false
+EOF
+}
+
+# =======================
+#  GHI FILE CONFIG CHÍNH
+# =======================
+echo "[•] Tạo $XRAYR_CONFIG…"
+cat >"$XRAYR_CONFIG" <<EOF
+Log:
+  Level: warning
+  AccessPath: ${ACCESS_LOG}
+  ErrorPath: ${ERROR_LOG}
+
+ConnectionConfig:
+  Handshake: 4
+  ConnIdle: 30
+  UplinkOnly: 2
+  DownlinkOnly: 4
+  BufferSize: 64
+
+Nodes:
+EOF
+
+# Append theo lựa chọn
+case "$MODE" in
+  1) append_vmess ;;
+  2) append_trojan ;;
+  3) append_vless_tls ;;
+  4) append_vmess; append_trojan; append_vless_tls ;;
+  5) append_shadowsocks ;;
+esac
+
+# =======================
+#  MENU QUẢN LÝ NHANH
+# =======================
+cat >/root/xrayr <<'MENU'
+#!/usr/bin/env bash
+while true; do
+  clear
+  echo "====== XrayR Menu ======"
+  echo "1) Sửa config (/etc/XrayR/config.yml)"
+  echo "2) Restart XrayR"
+  echo "3) Xem log (journalctl -u XrayR -e)"
+  echo "4) Gỡ XrayR"
+  echo "0) Thoát"
+  echo "========================"
+  read -p "Chọn: " c
+  case "$c" in
+    1) ${EDITOR:-nano} /etc/XrayR/config.yml ;;
+    2) XrayR restart || systemctl restart XrayR ;;
+    3) journalctl -u XrayR -e --no-pager | tail -n 200 ; read -p "Nhấn Enter để về menu..." ;;
+    4) XrayR uninstall ;;
+    0) exit 0 ;;
+    *) echo "Lựa chọn không hợp lệ!"; sleep 1 ;;
+  esac
+done
+MENU
+chmod +x /root/xrayr
+
+# =======================
+#  KHỞI ĐỘNG LẠI DỊCH VỤ
+# =======================
+echo "[•] Restart XrayR…"
+XrayR restart || systemctl restart XrayR
+
+echo
+echo "✅ Hoàn tất!"
+echo "📄 Config: $XRAYR_CONFIG"
+echo "📜 Log: $ACCESS_LOG , $ERROR_LOG"
+echo "🛠  Menu: /root/xrayr"
