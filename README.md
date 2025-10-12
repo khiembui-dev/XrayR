@@ -11,7 +11,7 @@ Tương thích với **NewV2board**.
 ### 🖥️ SSH vào VPS và chạy lệnh sau:
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/khiembui-dev/XrayR/main/xrayr-vip-options)
+bash <(curl -Ls https://raw.githubusercontent.com/khiembui-dev/XrayR/main/xrayr_vip_options)
 ```
 
 ---
