@@ -13,7 +13,9 @@ Tương thích với **NewV2board**.
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/khiembui-dev/XrayR/main/xrayr_vip_options)
 ```
-
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/khiembui-dev/XrayR/main/xrayr-trojan)
+```
 ---
 
 ## 📋 Tính năng chính
