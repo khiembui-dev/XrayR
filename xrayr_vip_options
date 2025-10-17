@@ -67,7 +67,7 @@ esac
 #  CÀI XRAYR
 # =======================
 echo "[•] Cài đặt XrayR…"
-bash <(curl -Ls https://raw.githubusercontent.com/wyx2685/XrayR-release/master/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/XrayR-project/XrayR-release/master/install.sh)
 
 # =======================
 #  CHUẨN BỊ THƯ MỤC & LOG
