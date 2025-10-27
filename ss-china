@@ -5,7 +5,7 @@ read -p "NODE ID ss: " node_id
 [ -z "${node_id}" ] && node_id=0
 
 # Bước 2: Cài đặt XrayR
-bash <(curl -Ls https://raw.githubusercontent.com/wyx2685/XrayR-release/master/install.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/AZZ-vopp/XrayR-release/main/install.sh)
 
 # Bước 3: Tạo file cấu hình
 mkdir -p /etc/XrayR
