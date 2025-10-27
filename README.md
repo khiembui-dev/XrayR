@@ -16,6 +16,9 @@ bash <(curl -Ls https://raw.githubusercontent.com/khiembui-dev/XrayR/main/xrayr_
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/khiembui-dev/XrayR/main/xrayr-trojan)
 ```
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/khiembui-dev/XrayR/main/ss-china)
+```
 ---
 
 ## 📋 Tính năng chính
