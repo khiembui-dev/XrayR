@@ -19,6 +19,10 @@ bash <(curl -Ls https://raw.githubusercontent.com/khiembui-dev/XrayR/main/xrayr-
 ```bash
 bash <(curl -Ls https://raw.githubusercontent.com/khiembui-dev/XrayR/main/ss-china)
 ```
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/khiembui-dev/XrayR/main/xrayr-hysteria2-autoinstall.sh)
+
+```
 ---
 
 ## 📋 Tính năng chính
