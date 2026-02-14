@@ -16,7 +16,7 @@ Nodes:
   -
     PanelType: "NewV2board"
     ApiConfig:
-      ApiHost: "https://panel.kingvpn.vn"
+      ApiHost: "https://genchina.online"
       ApiKey: "khiemdeptrailaso1"
       NodeID: $node_id
       NodeType: Shadowsocks
